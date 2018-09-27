@@ -2,7 +2,7 @@ import os, glob, pyexcel
 import matplotlib.pyplot as plt
 from numpy import *
 from scipy.optimize import curve_fit
-from scipy.signal import medfilt
+from scipy.signal import medfilt, butter, filtfilt, freqz, get_window
 
 # Read  Me
 # Specify the main directory below under workDir
@@ -10,13 +10,14 @@ from scipy.signal import medfilt
 # For example: Strain_Gauge/SG_dyn/dv1.xlsx
 
 # Main working directory
-workDir = 'c:/Users/Richard/Documents/ME103Lab2'
+workDir = 'c:/Users/Richard/Documents/GitHub/ME103_Lab_2'
 # Change to main folder
 os.chdir(workDir)
 print('Now in {}'.format(workDir))
 
 # Check all valid sensor folder
 senList = [sen for sen in os.listdir(workDir) if os.path.isdir(sen)]
+senList.remove('.git')
 report = dict.fromkeys(senList)
 for sensor in senList:
     senDir = workDir + '/' + sensor
@@ -43,6 +44,27 @@ for sensor in senList:
             # Time from ta.xlsx
             # Voltage from ta.xlsx
 
+            # Low pass filter
+            def low_pass_filter(x, cutoff = 124, sampling = 10000, order = 6):
+                nyquist = sampling/2
+                normalize_freq = (cutoff/nyquist)
+                b, a = butter(order, normalize_freq,
+                            btype = 'lowpass', analog = False)
+                # Filter Frequency Response
+                # w, h = freqz(b, a)
+                # plt.semilogx(w/(2*pi)*sampling, 20*log10(abs(h)))
+                # plt.axvline(12.4, color='k')
+                # plt.grid(which='both', axis='both')
+                # plt.title('Butterworth filter frequency response')
+                # plt.xlabel('Frequency [Hz]')
+                # plt.ylabel('Amplitude [dB]')
+                # plt.show()
+
+
+                x[:] = filtfilt(b, a, x)
+                return x
+                # return filtfilt(b, a, x)
+
             # Iterating throught data files to collect data
             for fileName in trialList:
                 # Getting sheets from file
@@ -55,18 +77,14 @@ for sensor in senList:
                 data = array(rawData, dtype = float).transpose()
                 # Selectively collecting data from each file
                 if fileName == trialList[0]:
-                    totalDisplacement = data[1]*25.4
                     time = data[0]
+                    totalDisplacement = data[1]*25.4
 
                 elif fileName == trialList[1]:
-                    voltage = medfilt(medfilt(data[1]))
+                    voltage = low_pass_filter(medfilt(medfilt(data[1])))
 
                 else:
                     raise ValueError('Error reading the wrong trial file')
-
-            # Filter all data
-            def filtering():
-                pass
 
             def rezeroing():
                 global totalDisplacement
@@ -80,15 +98,46 @@ for sensor in senList:
                 totalDisplacement = totalDisplacement[indexBool]
                 time = time[indexBool]
 
+            def numerical_diff(x, dt, scale):
+                global low_pass_filter
+                xdot = zeros(len(x))
+                xdotdot = zeros(len(x))
+                for i in range(len(x)):
+                    if i <= 1*scale:
+                        # Forward differentiation
+                        xdot[i] = (-3*x[i] + 4*x[i+1*scale]
+                                    - x[i+2*scale])/(2*scale*dt)
+                        xdotdot[i] = (x[i+2*scale] - 2*x[i+1*scale]
+                                    + x[i])/((scale*dt)**2)
+                    elif i >= (len(x) - 2*scale):
+                        # Backward differentiation
+                        xdot[i] = (3*x[i] - 4*x[i-1*scale]
+                                    + x[i-2*scale])/(2*scale*dt)
+                        xdotdot[i] = (-x[i-2*scale] + 2*x[i-1*scale]
+                                    - x[i])/((scale*dt)**2)
+                    else:
+                        # Fourth order center differentiation
+                        xdot[i] = (-x[i+2*scale]
+                                    + 8*x[i+1*scale] - 8*x[i-1*scale]
+                                    + x[i-2*scale])/(12*scale*dt)
+                        xdotdot[i] = (-x[i+2*scale] + 16*x[i+1*scale] -30*x[i]
+                                    + 16*x[i-1*scale]
+                                    - x[i-2*scale])/(12*(scale*dt)**2)
+
+                return low_pass_filter(medfilt(xdot)), xdotdot
+
             # Curve fitting based on scenario
             def checkScenario(f, x, y):
                 global report, trial, sensor
 
                 if 'static' in folderName:
+                    y = low_pass_filter(y, cutoff = 10)
+                    # y = average(x)*ones(len(x))
                     popt, _ = curve_fit(f, x, y)
                     report[sensor]['static'].append(popt)
 
                 elif 'qui' in folderName:
+                    y = low_pass_filter(y, cutoff = 20)
                     popt, _ = curve_fit(f, x, y)
                     report[sensor]['quasi_static'].append(popt)
 
@@ -108,30 +157,52 @@ for sensor in senList:
             # Data Anaysis
             if sensor == 'Strain_Gauge':
                 # Governing equation
-                def sg(x, a, b):
-                    # Vout = Vin + g*IR*delta_L + I*R
-                    return 5 + 2*a*x + b
+                # Vout = Vin + g*IR*delta_L + I*R
 
+                sg = lambda x, a, b: 5 + 2*a*x + b
                 checkScenario(sg, totalDisplacement, voltage)
+
+                # sg = lambda x, a, b: a*x + b
+                # checkScenario(sg, voltage, totalDisplacement)
 
             elif sensor == 'IR':
                 # Governing equation
-                def ir(x, a, b):
-                    # return a*(x**-2) + b
-                    return a*exp(b*x)
-
+                ir = lambda x, a, b: a*exp(b*x)
                 checkScenario(ir, totalDisplacement, voltage)
+
+                # ir = lambda x, a, b: a*sqrt(x) + b
+                # checkScenario(ir, voltage, totalDisplacement)
 
             elif sensor == 'Voice_Coil':
                 pass
+                # velocity, _ = numerical_diff(totalDisplacement,
+                #                             dt = time[1]-time[0], scale = 40)
+                # plt.figure(5)
+                # plt.title('Encoder Velocity')
+                # plt.plot(time, velocity, 'b')
+                # plt.xlabel('Time (s)')
+                # plt.ylabel('Velocity (mm/s)')
+                # plt.show()
+
             elif sensor == 'Accelerometer':
                 pass
+                # velocity, _ = numerical_diff(totalDisplacement,
+                #                             dt = time[1]-time[0], scale = 40)
+                # acceleration, _ = numerical_diff(velocity,
+                #                     dt = time[1]-time[0], scale = 40)
+                # plt.figure(4)
+                # plt.title('Encoder Acceleration')
+                # plt.plot(time, acceleration, 'b')
+                # plt.xlabel('Time (s)')
+                # plt.ylabel('Acceleration (mm s^-2)')
+                # plt.show()
+
             else:
                 raise ValueError('Sensor Not Regonized')
 
             # Plotting
-            plt.figure(trial, figsize = (13, 7.5))
-            plt.subplots(3,1)
+            plt.figure(figsize = (13, 7.5))
+            # plt.subplots(3,1)
 
             plt.subplot(311)
             plt.gca().set_title('Sensor: {} Case : {} Trial {}'.format(
@@ -148,13 +219,16 @@ for sensor in senList:
             plt.legend()
 
             plt.subplot(313)
-            plt.plot(totalDisplacement, voltage, label = 'vs')
+            plt.plot(totalDisplacement, voltage, label = 'curve fit')
+            # plt.plot(voltage, totalDisplacement, label = 'curve fit')
+            # plt.xlabel('Voltage')
             plt.xlabel('Distance')
+            # plt.ylabel('Distance')
             plt.ylabel('Voltage')
             plt.legend()
 
             plt.savefig('Trial_{}'.format(trial))
-            # plt.show()
+            plt.show()
             plt.close()
 
     # Calculating Means
