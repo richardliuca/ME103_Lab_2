@@ -18,6 +18,7 @@ print('Now in {}'.format(workDir))
 # Check all valid sensor folder
 senList = [sen for sen in os.listdir(workDir) if os.path.isdir(sen)]
 senList.remove('.git')
+senList.remove('__pycache__')
 report = dict.fromkeys(senList)
 for sensor in senList:
     senDir = workDir + '/' + sensor
@@ -78,7 +79,7 @@ for sensor in senList:
                 # Selectively collecting data from each file
                 if fileName == trialList[0]:
                     time = data[0]
-                    totalDisplacement = data[1]*25.4
+                    totalDisplacement = data[1]*0.0254
 
                 elif fileName == trialList[1]:
                     voltage = low_pass_filter(medfilt(medfilt(data[1])))
@@ -228,7 +229,7 @@ for sensor in senList:
             plt.legend()
 
             plt.savefig('Trial_{}'.format(trial))
-            plt.show()
+            # plt.show()
             plt.close()
 
     # Calculating Means
