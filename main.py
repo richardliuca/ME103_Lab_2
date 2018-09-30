@@ -3,12 +3,18 @@ import matplotlib.pyplot as plt
 from numpy import *
 from scipy.optimize import curve_fit
 from scipy.signal import medfilt, butter, filtfilt, freqz, get_window
-from scipy.stats
 
 # Read Me
 # Specify the main directory below under workDir
 # Then place data in the specific order inside the main directory : Sensor/Scenario/execfile
 # For example: Strain_Gauge/SG_dyn/dv1.xlsx
+
+# Governing equation
+# Vout = Vin + g*IR*delta_L + I*R
+sg = lambda x, a, b: 5 + 2*a*x + b
+ir = lambda x, a, b: a*x + b
+vc = lambda x, a, b: a*x + b
+acc = lambda x, a, b: a*x + b
 
 # Main working directory
 workDir = 'c:/Users/Richard/Documents/GitHub/ME103_Lab_2'
@@ -27,7 +33,12 @@ for sensor in senList:
     print('Now in {}'.format(senDir))
     # Sensor Summary Template
     sensDict = {'static': [], 'quasi_static': [], 'transient': [],
-                'dynamic': [], 'mean': []}
+                'dynamic': [], 'Static_Model': [], 'Dynamic_Model': [],
+                'xDataS': [], 'xDataD': [], 'xDataT': [],
+                'yDataS': [], 'yDataD': [], 'yDataT': [],
+                'residualS' : [], 'residualTD' : [], 'residualSD' : [],
+                'StErrS' : [], 'StErrD': [],'SS_S' : [], 'SS_D': [],
+                '95%CIS': [], '95%CID': []}
     # All Sensor summary list
     report[sensor] = sensDict
 
@@ -38,12 +49,12 @@ for sensor in senList:
         os.chdir(senDir + '/' + folderName)
         print('Now in {}'.format(senDir+'/'+folderName))
 
-        residual = zeros((3, 50000))
-        xData = zeros((3, 50000))
+        # residual = zeros((3, 50000))
+        # xData = zeros((3, 50000))
 
         # Iterating through 3 trials
         for trial in range(1,4):
-            print('Reading trial {}'.format(trial))
+            # print('Reading trial {}'.format(trial))
             trialList = ['td'+str(trial)+'.xlsx', 'ta'+str(trial)+'.xlsx']
             # Total Displacement from td.xlsx
             # Time from ta.xlsx
@@ -55,17 +66,6 @@ for sensor in senList:
                 normalize_freq = (cutoff/nyquist)
                 b, a = butter(order, normalize_freq,
                             btype = 'lowpass', analog = False)
-                # Filter Frequency Response
-                # w, h = freqz(b, a)
-                # plt.semilogx(w/(2*pi)*sampling, 20*log10(abs(h)))
-                # plt.axvline(12.4, color='k')
-                # plt.grid(which='both', axis='both')
-                # plt.title('Butterworth filter frequency response')
-                # plt.xlabel('Frequency [Hz]')
-                # plt.ylabel('Amplitude [dB]')
-                # plt.show()
-
-
                 x[:] = filtfilt(b, a, x)
                 return x
                 # return filtfilt(b, a, x)
@@ -153,20 +153,28 @@ for sensor in senList:
                     y = low_pass_filter(y, cutoff = 20)
                     popt, _ = curve_fit(f, x, y)
                     report[sensor]['quasi_static'].append(popt)
+                    report[sensor]['xDataS'].append(x)
+                    report[sensor]['yDataS'].append(y)
+                    report[sensor]['residualS'].append(y - f(x, popt[0], popt[1]))
 
                 elif 'trans' in folderName:
                     index = truncate()
-                    if len(residual[0]) == 50000:
-                        residual = zeros((3, len(x[index])))
-                        xData = zeros((3, len(x[index])))
-
+                    # if len(residual[0]) == 50000:
+                    #     residual = zeros((3, len(x[index])))
+                    #     xData = zeros((3, len(x[index])))
                     popt, _ = curve_fit(f, x[index], y[index])
                     report[sensor]['transient'].append(popt)
+                    report[sensor]['xDataT'].append(x[index])
+                    report[sensor]['yDataT'].append(y[index])
+                    report[sensor]['residualTD'].append(y[index] - f(x[index], popt[0], popt[1]))
 
                 elif 'dyn' in folderName:
                     rezeroing()
                     popt, _ = curve_fit(f, x, y)
                     report[sensor]['dynamic'].append(popt)
+                    report[sensor]['xDataD'].append(x)
+                    report[sensor]['yDataD'].append(y)
+                    report[sensor]['residualSD'].append(y - f(x, popt[0], popt[1]))
 
                 else:
                     raise ValueError('Scenario Not Found ')
@@ -210,22 +218,20 @@ for sensor in senList:
 
             # Data Anaysis
             if sensor == 'Strain_Gauge':
-                # Governing equation
-                # Vout = Vin + g*IR*delta_L + I*R
-                sg = lambda x, a, b: 5 + 2*a*x + b
                 coefficient = checkScenario(sg, totalDisplacement, voltage)
 
                 fit = sg(totalDisplacement, coefficient[0], coefficient[1])
 
-                yBar = sum(voltage)/len(voltage)
-                ssreg = sum((fit - yBar)**2)
-                sstot = sum((voltage - yBar)**2)
+                # yBar = sum(voltage)/len(voltage)
+                # ssreg = sum((fit - yBar)**2)
+                # sstot = sum((voltage - yBar)**2)
+                #
+                # print('R square is : {}'.format(ssreg/sstot))
 
-                print('R square is : {}'.format(ssreg/sstot))
+                # residual[trial-1] = voltage - fit
+                # xData[trial-1] = totalDisplacement
 
-                residual[trial-1] = voltage - fit
 
-                xData[trial-1] = totalDisplacement
 
                 plottingSubplot3(time, voltage, time, totalDisplacement,
                             totalDisplacement, voltage,
@@ -235,21 +241,18 @@ for sensor in senList:
                             [sensor, 'Encoder', 'data'])
 
             elif sensor == 'IR':
-                # Governing equation
-                ir = lambda x, a, b: a*x + b
                 coefficient = checkScenario(ir, totalDisplacement, voltage)
 
                 fit = ir(totalDisplacement, coefficient[0], coefficient[1])
 
-                yBar = sum(voltage)/len(voltage)
-                ssreg = sum((fit - yBar)**2)
-                sstot = sum((voltage - yBar)**2)
-
-                print('R square is : {}'.format(ssreg/sstot))
-
-                residual[trial-1] = voltage - fit
-
-                xData[trial-1] = totalDisplacement
+                # yBar = sum(voltage)/len(voltage)
+                # ssreg = sum((fit - yBar)**2)
+                # sstot = sum((voltage - yBar)**2)
+                #
+                # print('R square is : {}'.format(ssreg/sstot))
+                #
+                # residual[trial-1] = voltage - fit
+                # xData[trial-1] = totalDisplacement
 
                 plottingSubplot3(time, voltage, time, totalDisplacement,
                             totalDisplacement, voltage,
@@ -261,21 +264,18 @@ for sensor in senList:
             elif sensor == 'Voice_Coil':
                 velocity, _ = numerical_diff(totalDisplacement,
                                             dt = time[1]-time[0], scale = 40)
-                # Governing Equation
-                vc = lambda x, a, b: a*x + b
                 coefficient = checkScenario(vc, velocity, voltage)
 
                 fit = vc(velocity, coefficient[0], coefficient[1])
 
-                yBar = sum(voltage)/len(voltage)
-                ssreg = sum((fit - yBar)**2)
-                sstot = sum((voltage - yBar)**2)
-
-                print('R square is : {}'.format(ssreg/sstot))
-
-                residual[trial-1] = voltage -fit
-
-                xData[trial-1] = velocity
+                # yBar = sum(voltage)/len(voltage)
+                # ssreg = sum((fit - yBar)**2)
+                # sstot = sum((voltage - yBar)**2)
+                #
+                # print('R square is : {}'.format(ssreg/sstot))
+                #
+                # residual[trial-1] = voltage -fit
+                # xData[trial-1] = velocity
 
                 plottingSubplot3(time, voltage, time, velocity,
                             velocity, voltage, velocity, fit,
@@ -288,21 +288,17 @@ for sensor in senList:
                                             dt = time[1]-time[0], scale = 40)
                 acceleration, _ = numerical_diff(velocity,
                                     dt = time[1]-time[0], scale = 40)
-                # Governing Equation
-                acc = lambda x, a, b: a*x + b
                 coefficient = checkScenario(acc, acceleration, voltage)
 
                 fit = acc(acceleration, coefficient[0], coefficient[1])
 
-                yBar = sum(voltage)/len(voltage)
-                ssreg = sum((fit - yBar)**2)
-                sstot = sum((voltage - yBar)**2)
-
-                print('R square is : {}'.format(ssreg/sstot))
-
-                residual[trial-1] = voltage - fit
-
-                xData[trial-1] = acceleration
+                # yBar = sum(voltage)/len(voltage)
+                # ssreg = sum((fit - yBar)**2)
+                # sstot = sum((voltage - yBar)**2)
+                #
+                # print('R square is : {}'.format(ssreg/sstot))
+                #
+                    # residual[trial-1] = voltage - fit
 
                 plottingSubplot3(time, voltage, time, acceleration,
                         acceleration, voltage, acceleration, fit,
@@ -313,15 +309,247 @@ for sensor in senList:
             else:
                 raise ValueError('Sensor Not Regonized')
 
-        plt.figure(figsize = (14, 7))
-        plt.title('Residual : {}'.format(folderName))
-        plt.plot(xData[0], residual[0], ':', label = 'Trial 1')
-        plt.plot(xData[1], residual[1], ':', label = 'Trial 2')
-        plt.plot(xData[2], residual[2], ':', label = 'Trial 3')
+    os.chdir(senDir)
+
+
+    if sensor == 'Strain_Gauge' or sensor == 'IR' or sensor == 'Accelerometer':
+        report[sensor]['Dynamic_Model'] = mean(report[sensor]['transient'] + report[sensor]['dynamic'], axis = 0)
+        flatResD = append(reshape(report[sensor]['residualSD'], -1), reshape(report[sensor]['residualTD'], -1))
+        flatXD = append(reshape(report[sensor]['xDataD'], -1) ,reshape(report[sensor]['xDataT'], -1))
+        if sensor == 'Strain_Gauge' or sensor == 'IR':
+            report[sensor]['Static_Model'] = mean(report[sensor]['quasi_static'], axis = 0)
+            flatResS = reshape(report[sensor]['residualS'], -1)
+            flatXS = reshape(report[sensor]['xDataS'], -1)
+            report[sensor]['StErrS'] = sum(power(flatResS, 2)/(50000-2))
+            report[sensor]['SS_S'] = sum(power(flatXS - mean(flatXS), 2))
+            report[sensor]['95%CIS'] = [1.96*sqrt(report[sensor]['StErrS']/report[sensor]['SS_S']), sqrt(report[sensor]['StErrS']*(1/50000 + mean(flatXS)/report[sensor]['SS_S']))]
+
+    elif sensor == 'Voice_Coil':
+        report[sensor]['Dynamic_Model'] = mean(report[sensor]['transient'], axis = 0)
+        flatResD = reshape(report[sensor]['residualTD'], -1)
+        flatXD = reshape(report[sensor]['xDataT'], -1)
+
+    report[sensor]['StErrD'] = sum(power(flatResD, 2)/(50000-2))
+    report[sensor]['SS_D'] =  sum(power(flatXD - mean(flatXD), 2))
+    report[sensor]['95%CID'] = [1.96*sqrt(report[sensor]['StErrD']/report[sensor]['SS_D']), sqrt(report[sensor]['StErrD']*(1/50000 + power(mean(flatXD), 2)/report[sensor]['SS_D']))]
+
+    confBand = lambda x, StErr, SS, n, z: z*sqrt(StErr*(1 + 1/n + power(x - mean(x), 2)/SS))
+
+    if sensor == 'Strain_Gauge':
+        plt.figure(1, figsize = (14, 7))
+        plt.title('Static Behavior : {}'.format(sensor))
+        plt.plot(report[sensor]['xDataS'][0], report[sensor]['residualS'][0], 'k,', label = 'Trial 1 : Quasi-Transient')
+        plt.plot(report[sensor]['xDataS'][1], report[sensor]['residualS'][1], 'k,', label = 'Trial 2 : Quasi-Transient')
+        plt.plot(report[sensor]['xDataS'][2], report[sensor]['residualS'][2], 'k,', label = 'Trial 3 : Quasi-Transient')
+        plt.xlabel('Independent (m)')
+        plt.ylabel('Residual (v)')
         plt.grid(b = True, which = 'both')
         plt.legend()
-        plt.savefig('Residual.png')
+        plt.savefig('Static_Behavior_Residual_{}.png'.format(sensor))
         # plt.show()
         plt.close()
 
-    print(report[sensor])
+        plt.figure(2, figsize = (14, 7))
+        plt.title('Dynamic Behavior : {}'.format(sensor))
+        plt.plot(report[sensor]['xDataT'][0], report[sensor]['residualTD'][0], 'k,', label = 'Trial 1 : Transient')
+        plt.plot(report[sensor]['xDataT'][1], report[sensor]['residualTD'][1], 'k,', label = 'Trial 2 : Transient')
+        plt.plot(report[sensor]['xDataT'][2], report[sensor]['residualTD'][2], 'k,', label = 'Trial 3 : Transient')
+
+        plt.plot(report[sensor]['xDataD'][0], report[sensor]['residualSD'][0], 'k,', label = 'Trial 1 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][1], report[sensor]['residualSD'][1], 'k,', label = 'Trial 2 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][2], report[sensor]['residualSD'][2], 'k,', label = 'Trial 3 : Dynamic')
+        plt.xlabel('Independent (m)')
+        plt.ylabel('Residual (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Dynamic_Behavior_Residual_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+        # print(confBand(flatXS, report[sensor]['StErrS'], report[sensor]['SS_S'], 50000, 1.96))
+        print('Parameter Uncertanties Static: {} with 95% confidence'.format(report[sensor]['95%CIS']))
+        plt.figure(3, figsize = (14, 7))
+        plt.title('Static Model : {}'.format(sensor))
+        plt.plot(flatXS, sg(flatXS, report[sensor]['Static_Model'][0], report[sensor]['Static_Model'][1]), 'k',label = 'Model')
+        plt.plot(flatXS, sg(flatXS, report[sensor]['Static_Model'][0], report[sensor]['Static_Model'][1]) + confBand(flatXS, report[sensor]['StErrS'], report[sensor]['SS_S'], 50000, 1.96), 'r--',label = '95% Confidence Interval Upper Limit ')
+        plt.plot(flatXS, sg(flatXS, report[sensor]['Static_Model'][0], report[sensor]['Static_Model'][1]) - confBand(flatXS, report[sensor]['StErrS'], report[sensor]['SS_S'], 50000, 1.96), 'r--',label = '95% Confidence Interval Lower Limit ')
+        plt.plot(report[sensor]['xDataS'][0], report[sensor]['yDataS'][0], 'b,', label = 'Trial 1 : Quasi-Transient')
+        plt.plot(report[sensor]['xDataS'][1], report[sensor]['yDataS'][1], 'b,', label = 'Trial 2 : Quasi-Transient')
+        plt.plot(report[sensor]['xDataS'][2], report[sensor]['yDataS'][2], 'b,', label = 'Trial 3 : Quasi-Transient')
+        plt.xlabel('Position (m)')
+        plt.ylabel('Voltage (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Static_Behavior_Model_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+        # print(confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96))
+        print('Parameter Uncertanties Dynamic: {} with 95% confidence'.format(report[sensor]['95%CID']))
+        plt.figure(4, figsize = (14, 7))
+        plt.title('Dynamic Model : {}'.format(sensor))
+        plt.plot(flatXD, sg(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]), 'k',label = 'Model')
+        plt.plot(flatXD, sg(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]) + confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96), 'r--',label = '95% Confidence Interval Upper Limit ')
+        plt.plot(flatXD, sg(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]) - confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96), 'r--',label = '95% Confidence Interval Lower Limit ')
+        plt.plot(report[sensor]['xDataT'][0], report[sensor]['yDataT'][0], 'b,', label = 'Trial 1 : Transient')
+        plt.plot(report[sensor]['xDataT'][1], report[sensor]['yDataT'][1], 'b,', label = 'Trial 2 : Transient')
+        plt.plot(report[sensor]['xDataT'][2], report[sensor]['yDataT'][2], 'b,', label = 'Trial 3 : Transient')
+
+        plt.plot(report[sensor]['xDataD'][0], report[sensor]['yDataD'][0], 'b,', label = 'Trial 1 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][1], report[sensor]['yDataD'][1], 'b,', label = 'Trial 2 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][2], report[sensor]['yDataD'][2], 'b,', label = 'Trial 3 : Dynamic')
+        plt.xlabel('Position (m)')
+        plt.ylabel('Voltage (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Dynamic_Behavior_Model_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+    elif sensor == 'IR':
+        plt.figure(1, figsize = (14, 7))
+        plt.title('Static Behavior : {}'.format(sensor))
+        plt.plot(report[sensor]['xDataS'][0], report[sensor]['residualS'][0], 'k,', label = 'Trial 1 : Quasi-Transient')
+        plt.plot(report[sensor]['xDataS'][1], report[sensor]['residualS'][1], 'k,', label = 'Trial 2 : Quasi-Transient')
+        plt.plot(report[sensor]['xDataS'][2], report[sensor]['residualS'][2], 'k,', label = 'Trial 3 : Quasi-Transient')
+        plt.xlabel('Independent (m)')
+        plt.ylabel('Residual (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Static_Behavior_Residual_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+        plt.figure(2, figsize = (14, 7))
+        plt.title('Dynamic Behavior : {}'.format(sensor))
+        plt.plot(report[sensor]['xDataT'][0], report[sensor]['residualTD'][0], 'k,', label = 'Trial 1 : Transient')
+        plt.plot(report[sensor]['xDataT'][1], report[sensor]['residualTD'][1], 'k,', label = 'Trial 2 : Transient')
+        plt.plot(report[sensor]['xDataT'][2], report[sensor]['residualTD'][2], 'k,', label = 'Trial 3 : Transient')
+
+        plt.plot(report[sensor]['xDataD'][0], report[sensor]['residualSD'][0], 'k,', label = 'Trial 1 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][1], report[sensor]['residualSD'][1], 'k,', label = 'Trial 2 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][2], report[sensor]['residualSD'][2], 'k,', label = 'Trial 3 : Dynamic')
+        plt.xlabel('Independent (m)')
+        plt.ylabel('Residual (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Dynamic_Behavior_Residual_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+        # print(confBand(flatXS, report[sensor]['StErrS'], report[sensor]['SS_S'], 50000, 1.96))
+        print('Parameter Uncertanties Static: {} with 95% confidence'.format(report[sensor]['95%CIS']))
+        plt.figure(3, figsize = (14, 7))
+        plt.title('Static Model : {}'.format(sensor))
+        plt.plot(flatXS, ir(flatXS, report[sensor]['Static_Model'][0], report[sensor]['Static_Model'][1]), 'k',label = 'Model')
+        plt.plot(flatXS, ir(flatXS, report[sensor]['Static_Model'][0], report[sensor]['Static_Model'][1]) + confBand(flatXS, report[sensor]['StErrS'], report[sensor]['SS_S'], 50000, 1.96), 'r--',label = '95% Confidence Interval Upper Limit ')
+        plt.plot(flatXS, ir(flatXS, report[sensor]['Static_Model'][0], report[sensor]['Static_Model'][1]) - confBand(flatXS, report[sensor]['StErrS'], report[sensor]['SS_S'], 50000, 1.96), 'r--',label = '95% Confidence Interval Lower Limit ')
+        plt.plot(report[sensor]['xDataS'][0], report[sensor]['yDataS'][0], 'b,', label = 'Trial 1 : Quasi-Transient')
+        plt.plot(report[sensor]['xDataS'][1], report[sensor]['yDataS'][1], 'b,', label = 'Trial 2 : Quasi-Transient')
+        plt.plot(report[sensor]['xDataS'][2], report[sensor]['yDataS'][2], 'b,', label = 'Trial 3 : Quasi-Transient')
+        plt.xlabel('Position (m)')
+        plt.ylabel('Voltage (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Static_Behavior_Model_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+        # print(confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96))
+        print('Parameter Uncertanties Dynamic: {} with 95% confidence'.format(report[sensor]['95%CID']))
+        plt.figure(4, figsize = (14, 7))
+        plt.title('Dynamic Model : {}'.format(sensor))
+        plt.plot(flatXD, ir(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]), 'k',label = 'Model')
+        plt.plot(flatXD, ir(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]) + confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96), 'r--',label = '95% Confidence Interval Upper Limit ')
+        plt.plot(flatXD, ir(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]) - confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96), 'r--',label = '95% Confidence Interval Lower Limit ')
+        plt.plot(report[sensor]['xDataT'][0], report[sensor]['yDataT'][0], 'b,', label = 'Trial 1 : Transient')
+        plt.plot(report[sensor]['xDataT'][1], report[sensor]['yDataT'][1], 'b,', label = 'Trial 2 : Transient')
+        plt.plot(report[sensor]['xDataT'][2], report[sensor]['yDataT'][2], 'b,', label = 'Trial 3 : Transient')
+
+        plt.plot(report[sensor]['xDataD'][0], report[sensor]['yDataD'][0], 'b,', label = 'Trial 1 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][1], report[sensor]['yDataD'][1], 'b,', label = 'Trial 2 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][2], report[sensor]['yDataD'][2], 'b,', label = 'Trial 3 : Dynamic')
+        plt.xlabel('Position (m)')
+        plt.ylabel('Voltage (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Dynamic_Behavior_Model_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+    elif sensor == 'Accelerometer':
+        plt.figure(2, figsize = (14, 7))
+        plt.title('Dynamic Behavior : {}'.format(sensor))
+        plt.plot(report[sensor]['xDataT'][0], report[sensor]['residualTD'][0], 'k,', label = 'Trial 1 : Transient')
+        plt.plot(report[sensor]['xDataT'][1], report[sensor]['residualTD'][1], 'k,', label = 'Trial 2 : Transient')
+        plt.plot(report[sensor]['xDataT'][2], report[sensor]['residualTD'][2], 'k,', label = 'Trial 3 : Transient')
+
+        plt.plot(report[sensor]['xDataD'][0], report[sensor]['residualSD'][0], 'k,', label = 'Trial 1 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][1], report[sensor]['residualSD'][1], 'k,', label = 'Trial 2 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][2], report[sensor]['residualSD'][2], 'k,', label = 'Trial 3 : Dynamic')
+        plt.xlabel('Independent (m)')
+        plt.ylabel('Residual (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Dynamic_Behavior_Residual_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+        # print(confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96))
+        print('Parameter Uncertanties Dynamic: {} with 95% confidence'.format(report[sensor]['95%CID']))
+        plt.figure(3, figsize = (14, 7))
+        plt.title('Dynamic Model : {}'.format(sensor))
+        plt.plot(flatXD, acc(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]), 'k',label = 'Model')
+        plt.plot(flatXD, acc(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]) + confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96), 'r--',label = '95% Confidence Interval Upper Limit ')
+        plt.plot(flatXD, acc(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]) - confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96), 'r--',label = '95% Confidence Interval Lower Limit ')
+        plt.plot(report[sensor]['xDataT'][0], report[sensor]['yDataT'][0], 'b,', label = 'Trial 1 : Transient')
+        plt.plot(report[sensor]['xDataT'][1], report[sensor]['yDataT'][1], 'b,', label = 'Trial 2 : Transient')
+        plt.plot(report[sensor]['xDataT'][2], report[sensor]['yDataT'][2], 'b,', label = 'Trial 3 : Transient')
+
+        plt.plot(report[sensor]['xDataD'][0], report[sensor]['yDataD'][0], 'b,', label = 'Trial 1 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][1], report[sensor]['yDataD'][1], 'b,', label = 'Trial 2 : Dynamic')
+        plt.plot(report[sensor]['xDataD'][2], report[sensor]['yDataD'][2], 'b,', label = 'Trial 3 : Dynamic')
+        plt.xlabel('Acceleration (m s^-2)')
+        plt.ylabel('Voltage (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Dynamic_Behavior_Model_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+    elif sensor == 'Voice_Coil':
+        plt.figure(2, figsize = (14, 7))
+        plt.title('Dynamic Behavior : {}'.format(sensor))
+        plt.plot(report[sensor]['xDataT'][0], report[sensor]['residualTD'][0], 'k,', label = 'Trial 1 : Transient')
+        plt.plot(report[sensor]['xDataT'][1], report[sensor]['residualTD'][1], 'k,', label = 'Trial 2 : Transient')
+        plt.plot(report[sensor]['xDataT'][2], report[sensor]['residualTD'][2], 'k,', label = 'Trial 3 : Transient')
+        plt.xlabel('Independent (m)')
+        plt.ylabel('Residual (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Dynamic_Behavior_Residual_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+        # print(confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96))
+        print('Parameter Uncertanties Dynamic: {} with 95% confidence'.format(report[sensor]['95%CID']))
+        plt.figure(3, figsize = (14, 7))
+        plt.title('Dynamic Model : {}'.format(sensor))
+        plt.plot(flatXD, vc(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]), 'k',label = 'Model')
+        plt.plot(flatXD, vc(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]) + confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96), 'r--',label = '95% Confidence Interval Upper Limit ')
+        plt.plot(flatXD, vc(flatXD, report[sensor]['Dynamic_Model'][0], report[sensor]['Dynamic_Model'][1]) - confBand(flatXD, report[sensor]['StErrD'], report[sensor]['SS_D'], 50000, 1.96), 'r--',label = '95% Confidence Interval Lower Limit ')
+        plt.plot(report[sensor]['xDataT'][0], report[sensor]['yDataT'][0], 'b,', label = 'Trial 1 : Transient')
+        plt.plot(report[sensor]['xDataT'][1], report[sensor]['yDataT'][1], 'b,', label = 'Trial 2 : Transient')
+        plt.plot(report[sensor]['xDataT'][2], report[sensor]['yDataT'][2], 'b,', label = 'Trial 3 : Transient')
+        plt.xlabel('Velocity (m/s)')
+        plt.ylabel('Voltage (v)')
+        plt.grid(b = True, which = 'both')
+        plt.legend()
+        plt.savefig('Dynamic_Behavior_Model_{}.png'.format(sensor))
+        # plt.show()
+        plt.close()
+
+    else:
+        pass
+
+print('Complete')
