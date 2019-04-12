@@ -5,7 +5,7 @@ from scipy.signal import butter, lfilter, filtfilt, freqz
 
 def low_pass_filter(x, cutoff = 12.4*10, sampling = 10000, order = 6):
       nyquist = sampling/2
-      normalize_freq = (cutff/nyquist)
+      normalize_freq = (cutoff/nyquist)
       b, a = butter(order, normalize_freq,
                   btype = 'lowpass', analog = False)
       w, h = freqz(b, a)
